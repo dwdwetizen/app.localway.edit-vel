@@ -7,7 +7,8 @@ const TEAM_DATA_KEYS = {
   crmLeads: 'crm',
   analyses: 'analyses',
   proposals: 'proposals',
-  services: 'services'
+  services: 'services',
+  followUps: 'follow_ups'
 };
 
 // Busca tudo do Supabase e substitui os dados locais, depois re-renderiza as telas.
@@ -21,6 +22,7 @@ async function carregarDadosDoTime() {
 
     if (byId.leads_prosp) { leadsProsp = byId.leads_prosp; localStorage.setItem('localway_leads_prosp', JSON.stringify(leadsProsp)); }
     if (byId.crm) { crmLeads = byId.crm; localStorage.setItem('gbp_crm', JSON.stringify(crmLeads)); }
+    if (byId.follow_ups) { followUps = byId.follow_ups; localStorage.setItem('localway_followups', JSON.stringify(followUps)); }
     if (byId.analyses) { analyses = byId.analyses; localStorage.setItem('gbp_analyses', JSON.stringify(analyses)); }
     if (byId.proposals) { proposals = byId.proposals; localStorage.setItem('gbp_proposals', JSON.stringify(proposals)); }
     if (byId.services) { services = byId.services || getDefaultServices(); localStorage.setItem('gbp_services', JSON.stringify(services)); }
@@ -28,6 +30,7 @@ async function carregarDadosDoTime() {
     // Re-renderiza as telas que já tiverem sido carregadas na página
     if (typeof renderLeadsProsp === 'function') renderLeadsProsp();
     if (typeof renderKanban === 'function') renderKanban();
+    if (typeof renderFollowUps === 'function' && document.getElementById('page-followup')?.classList.contains('active')) renderFollowUps();
     if (typeof updateCrmMetrics === 'function') updateCrmMetrics();
     if (typeof atualizarStatsProsp === 'function') atualizarStatsProsp();
   } catch (e) {
@@ -39,7 +42,7 @@ async function carregarDadosDoTime() {
 async function enviarParaSupabase(chaveLocal) {
   const id = TEAM_DATA_KEYS[chaveLocal];
   if (!id) return;
-  const dataMap = { leadsProsp, crmLeads, analyses, proposals, services };
+  const dataMap = { leadsProsp, crmLeads, analyses, proposals, services, followUps };
   let value = dataMap[chaveLocal];
   const { data: { user } } = await sb.auth.getUser();
 
@@ -58,6 +61,22 @@ async function enviarParaSupabase(chaveLocal) {
       leadsProsp = value; // mantém a variável local também mesclada
     } catch (e) {
       console.warn('Não foi possível mesclar leads antes de salvar, enviando só o local:', e);
+    }
+  }
+
+  // Mesma lógica de leadsProsp: preserva follow-ups de outros colaboradores,
+  // só substitui os que pertencem (ou não têm dono ainda) ao usuário atual.
+  if (chaveLocal === 'followUps') {
+    try {
+      const { data: atual } = await sb.from('team_data').select('data').eq('id', id).single();
+      const remotos = (atual && atual.data) || [];
+      const meuId = user ? user.id : null;
+      const remotosDeOutros = remotos.filter(f => f.donoId && f.donoId !== meuId);
+      const meusOuSemDono = value.filter(f => !f.donoId || f.donoId === meuId);
+      value = [...remotosDeOutros, ...meusOuSemDono];
+      followUps = value;
+    } catch (e) {
+      console.warn('Não foi possível mesclar follow-ups antes de salvar, enviando só o local:', e);
     }
   }
 
